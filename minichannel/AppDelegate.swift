@@ -20,6 +20,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate, GIDSignInDelegate {
         // Override point for customization after application launch.
 
         // 認証チェックを追加する
+        FIRApp.configure()
+        
+        GIDSignIn.sharedInstance().clientID = FIRApp.defaultApp()?.options.clientID
+        GIDSignIn.sharedInstance().delegate = self
 
         return true
     }
@@ -48,16 +52,37 @@ class AppDelegate: UIResponder, UIApplicationDelegate, GIDSignInDelegate {
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplicationOpenURLOptionsKey : Any] = [:]) -> Bool {
         // 認証処理を追加する
-        return false
+        return GIDSignIn.sharedInstance().handle(
+            url,
+            sourceApplication: options[UIApplicationOpenURLOptionsKey.sourceApplication] as? String,
+            annotation: options[UIApplicationOpenURLOptionsKey.annotation]
+        )
+        //return false
     }
 
     public func sign(_ signIn: GIDSignIn!, didSignInFor user: GIDGoogleUser!, withError error: Error!) {
         // 認証後のサインイン処理を実装する
+        if let error = error {
+            //self.showMessagePrompt(error.localizedDescription)
+            print(error.localizedDescription)
+            return
+        }
+        
+        guard let authentication = user.authentication else { return }
+        
+        let credential = FIRGoogleAuthProvider.credential(
+            withIDToken: authentication.idToken,
+            accessToken: authentication.accessToken
+        )
+        FIRAuth.auth()?.signIn(with: credential) { (user, error) in
+            
+        }
     }
 
     func sign(_ signIn: GIDSignIn!, didDisconnectWith user:GIDGoogleUser!, withError error: Error!) {
         // Perform any operations when the user disconnects from app here.
         // ...
+        
     }
 
 }

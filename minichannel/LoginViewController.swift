@@ -8,6 +8,7 @@
 
 import UIKit
 import Firebase
+import FirebaseAuth
 
 class LoginViewController: UIViewController, GIDSignInUIDelegate {
 
@@ -18,8 +19,22 @@ class LoginViewController: UIViewController, GIDSignInUIDelegate {
         // Do any additional setup after loading the view.
 
         // ここに認証チェックを追加する
+        
+        GIDSignIn.sharedInstance().uiDelegate = self
+        //try? FIRAuth.auth()?.signOut()
+        FIRAuth.auth()?.addStateDidChangeListener { auth, user in
+            if user != nil {
+                self.performSegue(withIdentifier: "MainViewSegue", sender: nil)
+            }
+            
+        }
     }
-
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+    
+    }
+    
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
         // Dispose of any resources that can be recreated.
