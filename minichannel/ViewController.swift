@@ -11,12 +11,19 @@ import MobileCoreServices
 import Firebase
 import FirebaseStorage
 import FirebaseDatabase
+import AVFoundation
+import ObjectMapper
 
 class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     @IBOutlet var movieTableView: UITableView?
 
     let refreshControl = UIRefreshControl()
-    var movies = [MovieInfo]()
+    var movies = [MovieInfo]() {
+        didSet {
+            self.movieTableView?.reloadData()
+            self.refreshControl.endRefreshing()
+        }
+    }
     var playMovie: MovieInfo?
 
     override func viewDidLoad() {
@@ -37,6 +44,22 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
 
     func reload(_ sender: Any?) {
         // 動画を取得する処理を追加する
+        let ref = FIRDatabase.database().reference()
+        let userID = FIRAuth.auth()?.currentUser?.uid
+        ref.child("movies").observeSingleEvent(of: .value, with: { (snapshot) in
+            // Get user value
+            print(snapshot.children)
+            let movies = snapshot.children.flatMap { ($0 as? FIRDataSnapshot)?.value as? [String: Any]}.flatMap { MovieInfo(JSON: $0) }
+            self.movies = movies.reversed()
+            
+            DispatchQueue.main.async {
+                //self.movieTableView?.reloadData()
+                //self.refreshControl.endRefreshing()
+            }
+            
+        }) { (error) in
+            print(error.localizedDescription)
+        }
     }
 
     override func didReceiveMemoryWarning() {
@@ -55,9 +78,45 @@ class ViewController: UIViewController, UIImagePickerControllerDelegate, UINavig
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [String : Any]) {
         if let url = info[UIImagePickerControllerMediaURL] as? URL {
             // サムネイルを生成する
-            // 動画をストレージに保存する
-            // サムネイルを保存する
-            // データベースに動画エントリを追加する
+            let asset = AVURLAsset(url: url)
+            let imageGenerator = AVAssetImageGenerator(asset: asset)
+            let time = CMTimeMakeWithSeconds(asset.duration.seconds / 2, 30)
+            if let cgImage = try? imageGenerator.copyCGImage(at: time, actualTime: nil), let thumbnmailData = UIImageJPEGRepresentation(UIImage(cgImage: cgImage), 1) {
+                
+                // 動画をストレージに保存する
+                let storage = FIRStorage.storage().reference()
+                let name = NSUUID()
+                let movieRef = storage.child("movies/\(name).MOV")
+                movieRef.putFile(url, metadata: nil) { metadata, error in
+                    if (error != nil) {
+                        // Uh-oh, an error occurred!
+                    } else {
+                        // サムネイルを保存する
+                        let thumbnailPath = "thumbnails/\(name).jpg"
+                        let thumbnailRef = storage.child(thumbnailPath)
+                        thumbnailRef.put(thumbnmailData, metadata: nil) { _ in
+                            // データベースに動画エントリを追加する
+                            if let user = FIRAuth.auth()?.currentUser {
+                                let uid = user.uid
+                                var movieData = [
+                                    "uid": uid,
+                                    "movie_path": "movies/\(name).MOV",
+                                    "thumbnail_path": "thumbnails/\(name).jpg"
+                                ]
+                                if let userName = user.displayName {
+                                    movieData["user_name"] = userName
+                                }
+                                let databaseRef = FIRDatabase.database().reference()
+                                let moviesRef = databaseRef.child("movies")
+                                let key = moviesRef.childByAutoId().key
+                                moviesRef.child(key).setValue(movieData)
+                            }
+                            picker.dismiss(animated: true)
+                        }
+                    }
+                }
+
+            }
         }
     }
 }
@@ -72,8 +131,23 @@ extension ViewController: UITableViewDataSource {
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "MovieCell", for: indexPath)
+        let cell = tableView.dequeueReusableCell(withIdentifier: "MovieCell", for: indexPath) as! MovieTableViewCell
         // セルに動画情報を設定する処理を追加する
+        cell.nameLabel?.text = movies[indexPath.item].userName
+        
+        guard let path = movies[indexPath.item].thumbnailPath else { return cell }
+        
+        let storageRef = FIRStorage.storage().reference()
+        storageRef.child(path).data(withMaxSize: 1 * 1000 * 1000) { (data, error) in
+            guard let d = data else { return }
+            
+            
+            DispatchQueue.main.async {
+                cell.thumbnailView.image = UIImage(data: d)
+//                self.movieTableView?.reloadData()
+                //self.refreshControl.endRefreshing()
+            }
+        }
         return cell
     }
 }
@@ -84,6 +158,16 @@ extension ViewController: UITableViewDelegate {
         playMovie = movie
         let playerViewController = MoviePlayerViewController()
         // 押されたセルの動画を再生する処理を追加する
-        // self.navigationController?.pushViewController(playerViewController, animated: true)
+        guard let path = playMovie?.moviePath else { return }
+        let storageRef = FIRStorage.storage().reference()
+        storageRef.child(path).downloadURL { url, error in
+            //guard let url = URL(string: url ) else { return }
+            playerViewController.loadMovie(url!)
+            self.navigationController?.pushViewController(playerViewController, animated: true)
+        }
+       
+        //guard let url = URL(string: urlStr) else { return }
+        //playerViewController.loadMovie(url)
+        //self.navigationController?.pushViewController(playerViewController, animated: true)
     }
 }

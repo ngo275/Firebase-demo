@@ -29,7 +29,13 @@ class MoviePlayerViewController: UIViewController {
     }
 
     func loadMovie(_ url: URL) {
-        // 動画を再生する処理を記述する
+        controller = AVPlayerViewController()
+        //let playerItem = AVPlayerItem(url: url)
+        let player = AVPlayer(url: url)
+        controller?.player = player
+        addChildViewController(controller!)
+        view.addSubview(controller!.view)
+        controller?.player?.play()
     }
 
     /*
